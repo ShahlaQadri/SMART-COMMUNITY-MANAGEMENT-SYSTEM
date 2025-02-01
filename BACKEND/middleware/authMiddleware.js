@@ -1,30 +1,37 @@
-import express from 'express';
-import { signup, login } from '../controllers/authController.js'; // Adjust path if needed
-import { authenticate } from '../middleware/authMiddleware.js'; // Add authentication middleware
-import { authorizeRole } from '../middleware/checkRole.js'; // Add role-based authorization middleware
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
 
-const router = express.Router();
+dotenv.config();
 
-// Route for signup (no authentication required)
-router.post('/signup', signup);
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// Route for login (no authentication required)
-router.post('/login', login);
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is missing in environment variables');
+}
 
-// Example of a protected route (for any authenticated user)
-router.get('/protected', authenticate, (req, res) => {
-  res.status(200).json({
-    message: 'This is a protected route!',
-    user: req.user // Optionally return user details to confirm authentication
-  });
-});
+// Middleware to authenticate users
+export const authenticate = (req, res, next) => {
+  const token = req.header('Authorization')?.split(' ')[1];
 
-// Example of a protected route for admins only
-router.get('/admin-only', authenticate, authorizeRole('admin'), (req, res) => {
-  res.status(200).json({
-    message: 'Welcome Admin!',
-    user: req.user // Optionally return user details to confirm authentication
-  });
-});
+  if (!token) {
+    return res.status(401).json({ message: 'Access denied. No token provided.' });
+  }
 
-export default router;
+  try {
+    const decoded = jwt.verify(token,JWT_SECRET ); // ✅ Ensure same secret
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ message: 'Invalid token', error: err.message });
+  }
+};
+
+// Middleware to authorize users based on role
+export const authorizeRole = (role) => {
+  return (req, res, next) => {
+    if (!req.user || req.user.role !== role) {
+      return res.status(403).json({ message: 'Access denied. You do not have permission.' });
+    }
+    next();
+  };
+};
